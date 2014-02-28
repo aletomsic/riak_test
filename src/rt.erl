@@ -779,7 +779,7 @@ wait_until_aae_trees_built(Nodes) ->
                 true ->
                     lager:debug("Check if really built by locking"),
                     %% Try to lock each partition. If you get not_built,
-                    %% the manager has not detected the built process has 
+                    %% the manager has not detected the built process has
                     %% died yet.
                     %% Notice that the process locking is spawned by the
                     %% pmap. That's important! as it should die eventually
@@ -801,7 +801,7 @@ wait_until_aae_trees_built(Nodes) ->
                     AllBuilt =
                     lists:all(fun(V) -> V == true end,
                               rt:pmap(IdxBuilt, Partitions)),
-                    lager:debug("For node ~p all built = ~p", [Node, AllBuilt]),  
+                    lager:debug("For node ~p all built = ~p", [Node, AllBuilt]),
                     AllBuilt
             end
     end,
@@ -1005,17 +1005,29 @@ systest_read(Node, Start, End, Bucket, R, CommonValBin)
     F = fun(N, Acc) ->
                 case C:get(Bucket, <<N:32/integer>>, R) of
                     {ok, Obj} ->
-                        case riak_object:get_value(Obj) of
-                            <<N:32/integer, CommonValBin/binary>> ->
-                                Acc;
-                            WrongVal ->
-                                [{N, {wrong_val, WrongVal}} | Acc]
-                        end;
+                        verify_systest_value(N, Acc, CommonValBin, Obj);
                     Other ->
                         [{N, Other} | Acc]
                 end
         end,
     lists:foldl(F, [], lists:seq(Start, End)).
+
+verify_systest_value(N, Acc, CommonValBin, Obj) ->
+    Values = riak_object:get_values(Obj),
+    Res = [begin
+               case V of
+                   <<N:32/integer, CommonValBin/binary>> ->
+                       ok;
+                   _WrongVal ->
+                       wrong_val
+               end
+           end || V <- Values],
+    case lists:any(fun(X) -> X =:= ok end, Res) of
+        true ->
+            Acc;
+        false ->
+            [{N, {wrong_val, hd(Values)}} | Acc]
+    end.
 
 % @doc Reads a single replica of a value. This issues a get command directly
 % to the vnode handling the Nth primary partition of the object's preflist.
@@ -1456,4 +1468,3 @@ wait_for_control(Vsn, Node) when is_atom(Node) ->
 %% @doc Wait for Riak Control to start on a series of nodes.
 wait_for_control(VersionedNodes) when is_list(VersionedNodes) ->
     [wait_for_control(Vsn, Node) || {Vsn, Node} <- VersionedNodes].
-
